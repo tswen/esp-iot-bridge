@@ -1,10 +1,10 @@
-# Wired NIC example
+# Wireless NIC example
 
 ## Overview
 
-This example focuses on the networking part, implementing packet forwarding between network interfaces. It can be connected to PC or MCU through various network interfaces (USB/SPI/SDIO). ESP32 series chips use NAT to forward data packets in and out of the Ethernet network interface.
+This example focuses on the networking part, implementing packet forwarding between network interfaces. It can be connected to PC or MCU through various network interfaces (USB/ETH/SPI/SDIO). ESP32 series chips use NAT to forward data packets in and out of the Station network interface.
 
-![wired_nic_en](https://github.com/espressif/esp-iot-bridge/blob/master/components/iot_bridge/doc/_static/wired_nic_en.png?raw=true)
+![wireless_nic_en](https://github.com/espressif/esp-iot-bridge/blob/master/components/iot_bridge/doc/_static/wireless_nic_en.png?raw=true)
 
 ### How to use example
 #### Hardware Required
@@ -21,7 +21,7 @@ Follow detailed instructions provided specifically for this example.
 
 #### Choose the interface used to provide network data forwarding for other devices
 
-You can select the interface (USB/SPI/SDIO) connected to the PC/MCU in `Component config → Bridge Configuration → The interface used to provide network data forwarding for other devices` of `menuconfig`.
+You can select the interface (USB/ETH/SPI/SDIO) connected to the PC/MCU in `Component config → Bridge Configuration → The interface used to provide network data forwarding for other devices` of `menuconfig`.
 
 #### Build and Flash
 Run `idf.py flash monitor` to build, flash and monitor the project.

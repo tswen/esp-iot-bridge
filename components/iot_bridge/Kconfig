@@ -488,5 +488,5 @@ menu "Bridge Configuration"
 
     endmenu
 
-    rsource "driver/Kconfig"
+    rsource "drivers/Kconfig"
 endmenu

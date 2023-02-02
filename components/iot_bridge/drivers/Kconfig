@@ -3,29 +3,29 @@ menu "Bridge Driver Configuration"
 
     choice ESP_HOST_INTERFACE
         bool "Transport layer"
-        default ESP_SDIO_HOST_INTERFACE if IDF_TARGET_ESP32
-        default ESP_SPI_HOST_INTERFACE if IDF_TARGET_ESP32S2
+        default ESP_HOST_SDIO_INTERFACE if BRIDGE_DATA_FORWARDING_NETIF_SDIO
+        default ESP_HOST_SPI_INTERFACE if BRIDGE_DATA_FORWARDING_NETIF_SPI
         help
 	    Bus interface to be used for communication with the host
 
-        config ESP_SDIO_HOST_INTERFACE
+        config ESP_HOST_SDIO_INTERFACE
             bool "SDIO interface"
             depends on IDF_TARGET_ESP32
             help
                 Enable/Disable SDIO host interface
 
-        config ESP_SPI_HOST_INTERFACE
+        config ESP_HOST_SPI_INTERFACE
             bool "SPI interface"
             help
                 Enable/Disable SPI host interface
     endchoice
 
     menu "SPI Configuration"
-        depends on ESP_SPI_HOST_INTERFACE
+        depends on ESP_HOST_SPI_INTERFACE
 
         config ESP_SPI_CONTROLLER
             int "SPI controller to use"
-            depends on IDF_TARGET_ESP32 && ESP_SPI_HOST_INTERFACE
+            depends on IDF_TARGET_ESP32 && ESP_HOST_SPI_INTERFACE
             default 2
             range 2 3
             help

@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
 #include "esp_modem_api.h"
