@@ -1,5 +1,16 @@
 # ChangeLog
 
+## v0.6.0 - 2023.6.9
+
+### Supported ESP-IDF Version
+
+- Add v5.1
+
+### Supported Socs
+
+- ESP32-C6
+- ESP32-H2
+
 ## v0.5.0 - 2023.4.3
 
 ### Supported Socs
