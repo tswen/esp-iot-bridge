@@ -88,7 +88,9 @@ if(CONFIG_TINYUSB)
     endif()
 
     if(CONFIG_TINYUSB_BTH_ENABLED)
-        list(APPEND srcs "additions/src/tusb_bth.c")
+        list(APPEND srcs
+            "additions/src/tusb_bth.c"
+            "${IDF_PATH}/components/tinyusb/tinyusb/src/class/bth/bth_device.c")
     endif()
 
     if(CONFIG_TINYUSB_DFU_ENABLED)
