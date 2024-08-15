@@ -14,6 +14,8 @@
 #include "lwip/sys.h"
 #include "lwip/lwip_napt.h"
 
+#include "esp_bridge.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -23,6 +25,11 @@ extern "C"
 #define ESP_ERR_DUPLICATE_ADDITION    0x110   /*!< Netif was added repeatedly */
 
 typedef esp_err_t(*dhcps_change_cb_t)(esp_ip_addr_t *ip_info);
+
+#ifndef IOT_BRIDGE_NAPT_TABLE_CLEAR
+void ip_napt_table_clear(void);
+#define IOT_BRIDGE_NAPT_TABLE_CLEAR()    ip_napt_table_clear()
+#endif
 
 /**
  * @brief  Cause the TCP/IP stack to bring up an interface

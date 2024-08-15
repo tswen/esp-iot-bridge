@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-S2 | ESP32-S3 | ESP32-H2 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-C5 | ESP32-S2 | ESP32-S3 | ESP32-H2 |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
 
 # Wireless NIC example
 
@@ -25,6 +25,8 @@ Follow detailed instructions provided specifically for this example.
 #### Choose the interface used to provide network data forwarding for other devices
 
 You can select the interface (USB/ETH/SPI/SDIO) connected to the PC/MCU in `Component config → Bridge Configuration → The interface used to provide network data forwarding for other devices` of `menuconfig`.
+
+Note: The USB Network Class defaults to CONFIG_TINYUSB_NET_ECM. If you want to recognize the USB NIC device on a Windows computer, you need to select CONFIG_TINYUSB_NET_RNDIS.
 
 #### Build and Flash
 Run `idf.py flash monitor` to build, flash and monitor the project.

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -287,9 +287,12 @@ static bool check_fail_list(uint8_t *bssid)
 static esp_err_t stop_scan_filter(void)
 {
     if (!SLIST_EMPTY(&s_router_fail_list)) {
-        for (router_obj_t *fail_item = SLIST_FIRST(&s_router_fail_list); fail_item != NULL; fail_item = SLIST_NEXT(fail_item, next)) {
+        router_obj_t *fail_item = SLIST_FIRST(&s_router_fail_list);
+        while (fail_item != NULL) {
+            router_obj_t *next_item = SLIST_NEXT(fail_item, next);
             SLIST_REMOVE(&s_router_fail_list, fail_item, router_obj, next);
             free(fail_item);
+            fail_item = next_item;
         }
     }
 
@@ -607,10 +610,11 @@ static esp_err_t esp_web_start_scan_filter(uint8_t *phone_mac, uint8_t *password
         }
 
 #endif
-
         // delete scan list
-        for (item = SLIST_FIRST(&s_router_all_list); item != NULL; item = SLIST_NEXT(item, next)) {
-            ESP_LOGD(TAG, "Delete SSID:%s", item->ssid);
+        router_obj_t *next_item;
+        for (item = SLIST_FIRST(&s_router_all_list); item != NULL; item = next_item) {
+            next_item = SLIST_NEXT(item, next);
+            ESP_LOGD(TAG, "Delete SSID: %s", item->ssid);
             SLIST_REMOVE(&s_router_all_list, item, router_obj, next);
             free(item);
         }
@@ -1105,7 +1109,7 @@ static esp_err_t esp_web_apply_wifi_connect_info(int32_t udp_port)
         }
 
         s_wifi_sta_connect_timer_handler = xTimerCreate("listen_sta_connect_status", BRIDGE_WEB_TIMER_POLLING_PERIOD / portTICK_PERIOD_MS, pdTRUE,
-                                           NULL, listen_sta_connect_status_timer_cb);
+                                                        NULL, listen_sta_connect_status_timer_cb);
         xTimerStart(s_wifi_sta_connect_timer_handler, 5);
     } else {
         // if have connect to a ap, then disconnect
@@ -1113,7 +1117,7 @@ static esp_err_t esp_web_apply_wifi_connect_info(int32_t udp_port)
         s_wifi_sta_connect_event_group = xEventGroupCreate();
 
         s_wifi_sta_connect_timer_handler = xTimerCreate("listen_sta_connect_success", BRIDGE_WEB_TIMER_POLLING_PERIOD / portTICK_PERIOD_MS, pdTRUE,
-                                           NULL, listen_sta_connect_success_timer_cb);
+                                                        NULL, listen_sta_connect_success_timer_cb);
         xTimerStart(s_wifi_sta_connect_timer_handler, 5);
         connection_info.config_status = BRIDGE_WIFI_STA_CONNECTING;
         esp_web_update_sta_connection_info(&connection_info);

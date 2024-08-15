@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,6 +26,7 @@
 #include "esp_netif.h"
 #include "esp_netif_net_stack.h"
 
+#include "esp_bridge.h"
 #include "esp_bridge_internal.h"
 #include "network_adapter.h"
 
@@ -88,7 +89,7 @@ static void sdio_low_level_init(struct netif *netif)
 
 #if ESP_IPV6
 #if LWIP_IPV6 && LWIP_IPV6_MLD
-  netif->flags |= NETIF_FLAG_MLD6;
+    netif->flags |= NETIF_FLAG_MLD6;
 #endif
 #endif
 }
@@ -114,7 +115,7 @@ static err_t sdio_low_level_output(struct netif *netif, struct pbuf *p)
         return ERR_IF;
     }
 
-    if(q->next == NULL) {
+    if (q->next == NULL) {
         ret = esp_netif_transmit(esp_netif, q->payload, q->len);
     } else {
         LWIP_DEBUGF(PBUF_DEBUG, ("low_level_output: pbuf is a list, application may has bug"));
@@ -156,7 +157,7 @@ void sdio_input(void *h, void *buffer, size_t len, void *l2_buff)
     esp_netif_t *esp_netif = esp_netif_get_handle_from_netif_impl(netif);
     struct pbuf *p;
 
-    if(unlikely(!buffer || !netif_is_up(netif))) {
+    if (unlikely(!buffer || !netif_is_up(netif))) {
         if (l2_buff) {
             esp_netif_free_rx_buffer(esp_netif, l2_buff);
         }
@@ -267,35 +268,63 @@ const struct esp_netif_lwip_vanilla_config sdio_netstack_config = {
     .input_fn = sdio_input
 };
 
+static void sdio_got_ip_handler(void *arg, esp_event_base_t event_base,
+                                int32_t event_id, void *event_data)
+{
+    ip_event_got_ip_t *event = (ip_event_got_ip_t*)event_data;
+    esp_bridge_update_dns_info(event->esp_netif, NULL);
+    ESP_LOGI(TAG, "Connected with IP Address:" IPSTR, IP2STR(&event->ip_info.ip));
+}
+
+static void sdio_lost_ip_handler(void *arg, esp_event_base_t event_base,
+                                 int32_t event_id, void *event_data)
+{
+    IOT_BRIDGE_NAPT_TABLE_CLEAR();
+}
+
 esp_netif_t* esp_bridge_create_sdio_netif(esp_netif_ip_info_t* ip_info, uint8_t mac[6], bool data_forwarding, bool enable_dhcps)
 {
     esp_netif_ip_info_t netif_ip_info = { 0 };
     const esp_netif_inherent_config_t esp_netif_common_config = {
-        .flags = (ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
+#if defined(CONFIG_BRIDGE_DATA_FORWARDING_NETIF_SDIO)
+        .flags = (esp_netif_flags_t)(ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
+        .route_prio = 10,
+#elif defined(CONFIG_BRIDGE_EXTERNAL_NETIF_SDIO)
+        .flags = (esp_netif_flags_t)(ESP_NETIF_DHCP_CLIENT | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
+        .route_prio = 50,
+#endif
         .get_ip_event = IP_EVENT_STA_GOT_IP,
         .lost_ip_event = IP_EVENT_STA_LOST_IP,
-        .if_key = "SDIO_key",
-        .if_desc = "SDIO_Netif" 
+        .if_key = "SDIO_DEF",
+        .if_desc = "sdio"
     };
 
     esp_netif_config_t sdio_config = {
         .base = &esp_netif_common_config,
         .driver = &sdio_driver_ifconfig,
-        .stack = (const esp_netif_netstack_config_t*)&sdio_netstack_config
+        .stack = (const esp_netif_netstack_config_t*) &sdio_netstack_config
     };
-
-    if (!data_forwarding) {
-        return NULL;
-    }
 
     esp_netif_t* netif = esp_bridge_create_netif(&sdio_config, ip_info, mac, enable_dhcps);
     if (netif) {
         esp_bridge_network_adapter_init();
-        esp_bridge_netif_list_add(netif, sdio_netif_dhcp_status_change_cb);
+        esp_netif_up(netif);
+
         if (data_forwarding) {
+            esp_bridge_netif_list_add(netif, sdio_netif_dhcp_status_change_cb);
             esp_netif_get_ip_info(netif, &netif_ip_info);
             ESP_LOGI(TAG, "SDIO IP Address:" IPSTR, IP2STR(&netif_ip_info.ip));
             ip_napt_enable(netif_ip_info.ip.addr, 1);
+        } else {
+            esp_bridge_netif_list_add(netif, NULL);
+        }
+
+        if (enable_dhcps) {
+            esp_netif_dhcps_start(netif);
+        } else {
+            esp_netif_dhcpc_start(netif);
+            esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &sdio_got_ip_handler, NULL, NULL);
+            esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, &sdio_lost_ip_handler, NULL, NULL);
         }
     }
 

@@ -23,12 +23,24 @@
 #include "netif/etharp.h"
 
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_netif_net_stack.h"
 
 #include "esp_bridge_internal.h"
 #include "tinyusb.h"
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 4)
 #include "tusb_net.h"
+#include "tusb_bth.h"
+#else
+#include "tinyusb_net.h"
+#endif
+
+#if CFG_TUD_BTH
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 4)
+#error "USB BTH currently only support in IDF versions 5.0~5.1.3"
+#endif
+#endif
 
 /* Define those to better describe your network interface. */
 #define IFNAME0 'u'
@@ -36,8 +48,16 @@
 
 static const char* TAG = "bridge_usb";
 
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 4)
 esp_err_t pkt_netif2usb(void *buffer, uint16_t len);
+#endif
 esp_netif_t* usb_netif;
+
+static void usb_lost_ip_handler(void *arg, esp_event_base_t event_base,
+                                int32_t event_id, void *event_data)
+{
+    IOT_BRIDGE_NAPT_TABLE_CLEAR();
+}
 
 static esp_err_t usb_netif_dhcp_status_change_cb(esp_ip_addr_t *ip_info)
 {
@@ -53,18 +73,48 @@ static esp_err_t usb_netif_dhcp_status_change_cb(esp_ip_addr_t *ip_info)
     return ESP_OK;
 }
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 4)
+static esp_err_t usb_recv_callback(void *buffer, uint16_t len, void *ctx)
+{
+    // ESP_LOG_BUFFER_HEXDUMP(" usb ==> netif", src, size, ESP_LOG_INFO);
+    esp_netif_receive(usb_netif, buffer, len, NULL);
+    return ESP_OK;
+}
+#endif
+
 static void esp_bridge_usb_init(void)
 {
+    ESP_LOGI(TAG, "USB device initialization");
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 4)
+    const tinyusb_config_t tusb_cfg = {
+        .external_phy = false,
+    };
+    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+
+    tinyusb_net_config_t net_config = {
+        .on_recv_callback = usb_recv_callback,
+    };
+    esp_read_mac(net_config.mac_addr, ESP_MAC_WIFI_STA);
+    uint8_t *mac = net_config.mac_addr;
+    ESP_LOGI(TAG, "Network interface HW address: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    ESP_ERROR_CHECK(tinyusb_net_init(TINYUSB_USBDEV_0, &net_config));
+#else
     tusb_net_init();
-    ESP_LOGI(TAG, "USB initialization");
+
+#if CFG_TUD_BTH
+    // init ble controller
+    tusb_bth_init();
+#endif /* CFG_TUD_BTH */
 
     tinyusb_config_t tusb_cfg = {
         .external_phy = false // In the most cases you need to use a `false` value
     };
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+#endif
     ESP_LOGI(TAG, "USB initialization DONE");
 }
+
 struct esp_netif_lwip_vanilla_config {
     err_t (*init_fn)(struct netif*);
     void (*input_fn)(void *netif, void *buffer, size_t len, void *eb);
@@ -96,7 +146,7 @@ static void usb_low_level_init(struct netif *netif)
 
 #if ESP_IPV6
 #if LWIP_IPV6 && LWIP_IPV6_MLD
-  netif->flags |= NETIF_FLAG_MLD6;
+    netif->flags |= NETIF_FLAG_MLD6;
 #endif
 #endif
 }
@@ -122,7 +172,7 @@ static err_t usb_low_level_output(struct netif *netif, struct pbuf *p)
         return ERR_IF;
     }
 
-    if(q->next == NULL) {
+    if (q->next == NULL) {
         ret = esp_netif_transmit(esp_netif, q->payload, q->len);
     } else {
         LWIP_DEBUGF(PBUF_DEBUG, ("low_level_output: pbuf is a list, application may has bug"));
@@ -164,7 +214,7 @@ void usb_input(void *h, void *buffer, size_t len, void *l2_buff)
     esp_netif_t *esp_netif = esp_netif_get_handle_from_netif_impl(netif);
     struct pbuf *p;
 
-    if(unlikely(!buffer || !netif_is_up(netif))) {
+    if (unlikely(!buffer || !netif_is_up(netif))) {
         if (l2_buff) {
             esp_netif_free_rx_buffer(esp_netif, l2_buff);
         }
@@ -251,6 +301,14 @@ static void usb_driver_free_rx_buffer(void *h, void* buffer)
     }
 }
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 4)
+static esp_err_t pkt_netif2usb(void *buffer, uint16_t len)
+{
+    tinyusb_net_send_sync(buffer, len, NULL, portMAX_DELAY);
+    return ESP_OK;
+}
+#endif
+
 static esp_err_t usb_io_transmit(void *h, void *buffer, size_t len)
 {
     // send data to usb driver
@@ -282,14 +340,14 @@ esp_netif_t* esp_bridge_create_usb_netif(esp_netif_ip_info_t* ip_info, uint8_t m
         .flags = (ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
         .get_ip_event = IP_EVENT_STA_GOT_IP,
         .lost_ip_event = IP_EVENT_STA_LOST_IP,
-        .if_key = "USB_key",
-        .if_desc = "USB_Netif"
+        .if_key = "USB_DEF",
+        .if_desc = "usb"
     };
 
     esp_netif_config_t usb_config = {
         .base = &esp_netif_common_config,
         .driver = &usb_driver_ifconfig,
-        .stack = (const esp_netif_netstack_config_t*)&usb_netstack_config
+        .stack = (const esp_netif_netstack_config_t*) &usb_netstack_config
     };
 
     if (!data_forwarding) {
@@ -304,6 +362,8 @@ esp_netif_t* esp_bridge_create_usb_netif(esp_netif_ip_info_t* ip_info, uint8_t m
             esp_netif_get_ip_info(netif, &netif_ip_info);
             ESP_LOGI(TAG, "USB IP Address:" IPSTR, IP2STR(&netif_ip_info.ip));
             ip_napt_enable(netif_ip_info.ip.addr, 1);
+        } else {
+            esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_LOST_IP, &usb_lost_ip_handler, NULL, NULL);
         }
     }
 

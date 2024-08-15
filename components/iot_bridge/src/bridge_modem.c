@@ -14,6 +14,8 @@
 #include "esp_netif_ppp.h"
 #include "esp_modem_api.h"
 #include "esp_log.h"
+#include "esp_bridge.h"
+#include "esp_bridge_internal.h"
 
 #define MODULE_BOOT_TIME_MS     5000
 #if defined(CONFIG_BRIDGE_FLOW_CONTROL_NONE)
@@ -87,10 +89,11 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Name Server2: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
         ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
         xEventGroupSetBits(event_group, CONNECT_BIT);
-
+        esp_bridge_update_dns_info(event->esp_netif, NULL);
         ESP_LOGI(TAG, "GOT ip event!!!");
     } else if (event_id == IP_EVENT_PPP_LOST_IP) {
         ESP_LOGI(TAG, "Modem Disconnect from PPP Server");
+        IOT_BRIDGE_NAPT_TABLE_CLEAR();
     } else if (event_id == IP_EVENT_GOT_IP6) {
         ESP_LOGI(TAG, "GOT IPv6 event!");
 
@@ -124,7 +127,7 @@ esp_netif_t *esp_bridge_create_modem_netif(esp_netif_ip_info_t *custom_ip_info, 
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &on_ppp_changed, NULL));
 
-   /* Configure the PPP netif */
+    /* Configure the PPP netif */
     esp_modem_dce_config_t dce_config = ESP_MODEM_DCE_DEFAULT_CONFIG(CONFIG_BRIDGE_MODEM_PPP_APN);
     esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
     esp_netif_t *esp_netif = esp_netif_new(&netif_ppp_config);

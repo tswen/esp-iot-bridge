@@ -33,26 +33,20 @@
 #endif
 #include "esp_bt_api.h"
 #include "esp_api.h"
+#include "esp_kernel_port.h"
+#include "esp_stats.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
 MODULE_AUTHOR("Mangesh Malusare <mangesh.malusare@espressif.com>");
 MODULE_AUTHOR("Yogesh Mantri <yogesh.mantri@espressif.com>");
 MODULE_DESCRIPTION("Host driver for ESP-Hosted solution");
-MODULE_VERSION("0.4");
+MODULE_VERSION("0.0.5");
 
 struct esp_adapter adapter;
 volatile u8 stop_data = 0;
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
-    #define NDO_TX_TIMEOUT_PROTOTYPE() \
-        static void esp_tx_timeout(struct net_device *ndev, unsigned int txqueue)
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29))
-    #define NDO_TX_TIMEOUT_PROTOTYPE() \
-        static void esp_tx_timeout(struct net_device *ndev)
-#else
-    #error "No symbol **ndo_tx_timeout** found in kernel < 2.6.29"
-#endif
+static struct task_struct *rx_thread;
+static struct semaphore rx_sem;
 
 #define ACTION_DROP 1
 /* Unless specified as part of argument, resetpin,
@@ -92,10 +86,10 @@ static int esp_open(struct net_device *ndev);
 static int esp_stop(struct net_device *ndev);
 static int esp_hard_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 static int esp_set_mac_address(struct net_device *ndev, void *addr);
-NDO_TX_TIMEOUT_PROTOTYPE();
 static struct net_device_stats* esp_get_stats(struct net_device *ndev);
 static void esp_set_rx_mode(struct net_device *ndev);
 static int process_tx_packet (struct sk_buff *skb);
+static NDO_TX_TIMEOUT_PROTOTYPE();
 int esp_send_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 struct sk_buff * esp_alloc_skb(u32 len);
 
@@ -146,11 +140,11 @@ static int esp_set_mac_address(struct net_device *ndev, void *data)
 		return -EINVAL;
 
 	ether_addr_copy(priv->mac_address, mac_addr->sa_data);
-	ether_addr_copy(ndev->dev_addr, mac_addr->sa_data);
+	eth_hw_addr_set(ndev, mac_addr->sa_data);
 	return 0;
 }
 
-NDO_TX_TIMEOUT_PROTOTYPE()
+static NDO_TX_TIMEOUT_PROTOTYPE()
 {
 }
 
@@ -211,8 +205,7 @@ static struct esp_private * get_priv_from_payload_header(struct esp_payload_head
 
 void esp_process_new_packet_intr(struct esp_adapter *adapter)
 {
-	if(adapter)
-		queue_work(adapter->if_rx_workqueue, &adapter->if_rx_work);
+	up(&rx_sem);
 }
 
 static int process_tx_packet (struct sk_buff *skb)
@@ -225,10 +218,8 @@ static int process_tx_packet (struct sk_buff *skb)
 	u8 pad_len = 0, realloc_skb = 0;
 	u16 len = 0;
 	u16 total_len = 0;
-	static u8 c = 0;
 	u8 *pos = NULL;
 
-	c++;
 	/* Get the priv */
 	cb = (struct esp_skb_cb *) skb->cb;
 	priv = cb->priv;
@@ -299,7 +290,8 @@ static int process_tx_packet (struct sk_buff *skb)
 	payload_header->len = cpu_to_le16(len);
 	payload_header->offset = cpu_to_le16(pad_len);
 
-	payload_header->checksum = cpu_to_le16(compute_checksum(skb->data, (len + pad_len)));
+	if (adapter.capabilities & ESP_CHECKSUM_ENABLED)
+		payload_header->checksum = cpu_to_le16(compute_checksum(skb->data, (len + pad_len)));
 
 	if (!stop_data) {
 		ret = esp_send_packet(priv->adapter, skb);
@@ -333,9 +325,9 @@ void process_capabilities(u8 cap)
 	}
 }
 
-
 static void process_event(u8 *evt_buf, u16 len)
 {
+	int ret = 0;
 	struct esp_priv_event *event;
 
 	if (!evt_buf || !len)
@@ -344,10 +336,18 @@ static void process_event(u8 *evt_buf, u16 len)
 	event = (struct esp_priv_event *) evt_buf;
 
 	if (event->event_type == ESP_PRIV_EVENT_INIT) {
+
 		printk (KERN_INFO "\nReceived INIT event from ESP32 peripheral");
-		process_init_event(event->event_data, event->event_len);
+
+		ret = process_init_event(event->event_data, event->event_len);
+
+#ifdef CONFIG_SUPPORT_ESP_SERIAL
+		if (!ret)
+			esp_serial_reinit(esp_get_adapter());
+#endif
+
 	} else {
-		printk (KERN_WARNING "Drop unknown event");
+		printk (KERN_WARNING "Drop unknown event\n");
 	}
 }
 
@@ -382,6 +382,7 @@ static void process_rx_packet(struct sk_buff *skb)
 	struct hci_dev *hdev = adapter.hcidev;
 	u8 *type = NULL;
 	int ret = 0, ret_len = 0;
+	struct esp_adapter *adapter = esp_get_adapter();
 
 	if (!skb)
 		return;
@@ -391,25 +392,31 @@ static void process_rx_packet(struct sk_buff *skb)
 
 	len = le16_to_cpu(payload_header->len);
 	offset = le16_to_cpu(payload_header->offset);
-	rx_checksum = le16_to_cpu(payload_header->checksum);
 
-	payload_header->checksum = 0;
+	/*print_hex_dump(KERN_INFO, "rx: ",
+		DUMP_PREFIX_ADDRESS, 16, 1, skb->data , len+offset, 1  );*/
 
-	checksum = compute_checksum(skb->data, (len + offset));
+	if (adapter->capabilities & ESP_CHECKSUM_ENABLED) {
+		rx_checksum = le16_to_cpu(payload_header->checksum);
+		payload_header->checksum = 0;
 
-	if (checksum != rx_checksum) {
-		dev_kfree_skb_any(skb);
-		return;
+		checksum = compute_checksum(skb->data, (len + offset));
+
+		if (checksum != rx_checksum) {
+			printk(KERN_INFO "cal_chksum[%u]!=rx_chksum[%u]\n", checksum, rx_checksum);
+			dev_kfree_skb_any(skb);
+			return;
+		}
 	}
 
 	if (payload_header->if_type == ESP_SERIAL_IF) {
 #ifdef CONFIG_SUPPORT_ESP_SERIAL
-		/* print_hex_dump(KERN_INFO, "esp_serial_rx: ", DUMP_PREFIX_ADDRESS, 16, 1, skb->data + offset, len, 1  ); */
 		do {
 			ret = esp_serial_data_received(payload_header->if_num,
 					(skb->data + offset + ret_len), (len - ret_len));
 			if (ret < 0) {
-				printk(KERN_ERR "%s, Failed to process data for iface type %d\n", __func__, payload_header->if_num);
+				printk(KERN_ERR "%s, Failed to process data for iface type %d\n",
+						__func__, payload_header->if_num);
 				break;
 			}
 			ret_len += ret;
@@ -418,7 +425,8 @@ static void process_rx_packet(struct sk_buff *skb)
 		printk(KERN_ERR "%s, Dropping unsupported serial frame\n", __func__);
 #endif
 		dev_kfree_skb_any(skb);
-	} else if (payload_header->if_type == ESP_STA_IF || payload_header->if_type == ESP_AP_IF) {
+	} else if (payload_header->if_type == ESP_STA_IF ||
+	           payload_header->if_type == ESP_AP_IF) {
 		/* chop off the header from skb */
 		skb_pull(skb, offset);
 
@@ -428,7 +436,6 @@ static void process_rx_packet(struct sk_buff *skb)
 		if (!priv) {
 			printk (KERN_ERR "%s: empty priv\n", __func__);
 			dev_kfree_skb_any(skb);
-			//atomic_dec(&adapter.rx_pending);
 			return;
 		}
 
@@ -461,7 +468,8 @@ static void process_rx_packet(struct sk_buff *skb)
 			skb_pull(skb, offset);
 
 			type = skb->data;
-			//print_hex_dump(KERN_INFO, "bt_rx: ", DUMP_PREFIX_ADDRESS, 16, 1, skb->data, len, 1);
+			/* print_hex_dump(KERN_INFO, "bt_rx: ",
+			 * DUMP_PREFIX_ADDRESS, 16, 1, skb->data, len, 1);*/
 			hci_skb_pkt_type(skb) = *type;
 			skb_pull(skb, 1);
 
@@ -477,7 +485,24 @@ static void process_rx_packet(struct sk_buff *skb)
 		}
 	} else if (payload_header->if_type == ESP_PRIV_IF) {
 		process_priv_communication(skb);
+	} else if (payload_header->if_type == ESP_TEST_IF) {
+		#if TEST_RAW_TP
+			update_test_raw_tp_rx_stats(len);
+		#endif
+		dev_kfree_skb_any(skb);
 	}
+}
+
+int esp_is_tx_queue_paused(void)
+{
+	if ((adapter.priv[0]->ndev &&
+			!netif_queue_stopped((const struct net_device *)
+				adapter.priv[0]->ndev)) ||
+	    (adapter.priv[1]->ndev &&
+			!netif_queue_stopped((const struct net_device *)
+				adapter.priv[1]->ndev)))
+		return 1;
+	return 0;
 }
 
 void esp_tx_pause(void)
@@ -601,7 +626,7 @@ static int esp_init_net_dev(struct net_device *ndev, struct esp_private *priv)
 	/* set net dev ops */
 	ndev->netdev_ops = &esp_netdev_ops;
 
-	ether_addr_copy(ndev->dev_addr, priv->mac_address);
+	eth_hw_addr_set(ndev, priv->mac_address);
 	/* set ethtool ops */
 
 	/* update features supported */
@@ -662,13 +687,13 @@ error_exit:
 
 static void esp_remove_network_interfaces(struct esp_adapter *adapter)
 {
-	if (adapter->priv[0]->ndev) {
+	if (adapter->priv[0] && adapter->priv[0]->ndev) {
 		netif_stop_queue(adapter->priv[0]->ndev);
 		unregister_netdev(adapter->priv[0]->ndev);
 		free_netdev(adapter->priv[0]->ndev);
 	}
 
-	if (adapter->priv[1]->ndev) {
+	if (adapter->priv[1] && adapter->priv[1]->ndev) {
 		netif_stop_queue(adapter->priv[1]->ndev);
 		unregister_netdev(adapter->priv[1]->ndev);
 		free_netdev(adapter->priv[1]->ndev);
@@ -709,13 +734,6 @@ int esp_remove_card(struct esp_adapter *adapter)
 	if (!adapter)
 		return 0;
 
-	/* Flush workqueues */
-	if (adapter->if_rx_workqueue)
-		flush_workqueue(adapter->if_rx_workqueue);
-
-	if (adapter->tx_workqueue)
-		flush_workqueue(adapter->tx_workqueue);
-
 	esp_remove_network_interfaces(adapter);
 
 	adapter->priv[0] = NULL;
@@ -724,19 +742,16 @@ int esp_remove_card(struct esp_adapter *adapter)
 	return 0;
 }
 
-static void esp_if_rx_work (struct work_struct *work)
-{
-	/* read inbound packet and forward it to network/serial interface */
-	esp_get_packets(&adapter);
-}
-
 static void deinit_adapter(void)
 {
-	if (adapter.if_rx_workqueue)
-		destroy_workqueue(adapter.if_rx_workqueue);
+	if (adapter.if_context)
+		adapter.state = ESP_CONTEXT_DISABLED;
 
-	if (adapter.tx_workqueue)
-		destroy_workqueue(adapter.tx_workqueue);
+	up(&rx_sem);
+	if (rx_thread) {
+		kthread_stop(rx_thread);
+		rx_thread = NULL;
+	}
 }
 
 static void esp_reset(void)
@@ -756,7 +771,7 @@ static void esp_reset(void)
 
 			/* HOST's resetpin set to LOW */
 			gpio_set_value(resetpin, 0);
-			udelay(100);
+			udelay(200);
 
 			/* HOST's resetpin set to INPUT */
 			gpio_direction_input(resetpin);
@@ -766,24 +781,38 @@ static void esp_reset(void)
 	}
 }
 
+static int esp_rx_thread(void *data)
+{
+	printk(KERN_INFO "esp rx thread created\n");
+
+	while (!kthread_should_stop()) {
+
+		if (down_interruptible(&rx_sem)) {
+			msleep(10);
+			continue;
+		}
+
+		if (adapter.state != ESP_CONTEXT_READY) {
+			msleep(100);
+			continue;
+		}
+
+		/* read inbound packet and forward it to network/serial interface */
+		esp_get_packets(&adapter);
+	}
+	printk(KERN_INFO "esp rx thread cleared\n");
+	do_exit(0);
+	return 0;
+}
+
 static struct esp_adapter * init_adapter(void)
 {
 	memset(&adapter, 0, sizeof(adapter));
 
-	/* Prepare interface RX work */
-	adapter.if_rx_workqueue = create_workqueue("ESP_IF_RX_WORK_QUEUE");
-
-	if (!adapter.if_rx_workqueue) {
-		deinit_adapter();
-		return NULL;
-	}
-
-	INIT_WORK(&adapter.if_rx_work, esp_if_rx_work);
-
-	/* Prepare TX work */
-	adapter.tx_workqueue = create_workqueue("ESP_TX_WORK_QUEUE");
-
-	if (!adapter.tx_workqueue) {
+	sema_init(&rx_sem, 0);
+	rx_thread = kthread_run(esp_rx_thread, NULL, "esp32_rx");
+	if (!rx_thread) {
+		printk (KERN_ERR "Failed to create esp32_rx thread\n");
 		deinit_adapter();
 		return NULL;
 	}
@@ -818,8 +847,12 @@ static int __init esp_init(void)
 
 static void __exit esp_exit(void)
 {
+#if TEST_RAW_TP
+	test_raw_tp_cleanup();
+#endif
 	esp_deinit_interface_layer();
 	deinit_adapter();
+
 	if (resetpin != HOST_GPIO_PIN_INVALID) {
 		gpio_free(resetpin);
 	}

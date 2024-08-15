@@ -1,4 +1,5 @@
 stages:
+  - pre_check
   - build
   - deploy
 
@@ -8,12 +9,22 @@ variables: &global-variables
   PYTHON_VER: 3
 
 .setup_esp_idf: &setup_esp_idf
+  - image_str=${image}
+  - image_str=(${image_str//:/ })
+  - idf_branch=${image_str[1]}
   - cd $IDF_PATH
-  - git fetch origin ${idf_branch}
   - git checkout ${idf_branch}
   - git submodule update --init --recursive
   - ./install.sh
   - . ./export.sh
+  - cd -
+
+.setup_esp_idf_master: &setup_esp_idf_master
+  - cd $IDF_PATH
+  - git branch
+  - git fetch origin master
+  - git checkout master
+  - git submodule update --init --recursive
   - cd -
 
 .before_script_preparation: &before_script_preparation
@@ -24,105 +35,103 @@ variables: &global-variables
   - chmod 600 ~/.ssh/id_rsa
   - echo -e "Host gitlab.espressif.cn\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
   - export IDF_PATH=/opt/esp/idf
+  # - python -m pip install --upgrade idf-component-manager
+  - pip install idf-component-manager==1.4.1
 
 .build_iot_bridge_default: &build_iot_bridge_default
   - cd examples/wireless_nic
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y" >> sdkconfig.defaults.${idf_target}
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.${idf_target}
+  - git checkout -- .
+  - git clean -xdff
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
   - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.${idf_target}
   - echo -e "\nCONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE=y" >> sdkconfig.defaults.${idf_target}
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
 .build_iot_bridge_esp32: &build_iot_bridge_esp32
   - cd examples/wireless_nic
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SDIO=y" >> sdkconfig.defaults.esp32
-  - idf.py set-target esp32
-  - idf.py build
+  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SDIO=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.esp32
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_ETHERNET=n\nCONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE=y" >> sdkconfig.defaults.esp32
-  - idf.py set-target esp32
-  - idf.py build
-
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.esp32
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.esp32
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.esp32
-  - idf.py set-target esp32
-  - idf.py build
+  - git checkout -- .
+  - git clean -xdff
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_SDIO=y" >> sdkconfig.defaults.${idf_target}
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
 .build_iot_bridge_esp32s2: &build_iot_bridge_esp32s2
   - cd examples/wireless_nic
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y" >> sdkconfig.defaults.esp32s2
-  - idf.py set-target esp32s2
-  - idf.py build
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.esp32s2
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.esp32s2
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_USB=y\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.esp32s2
-  - idf.py set-target esp32s2
-  - idf.py build
+  - git checkout -- .
+  - git clean -xdff
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.${idf_target}
+  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_USB=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
 .build_iot_bridge_esp32s3: &build_iot_bridge_esp32s3
   - cd examples/wireless_nic
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y" >> sdkconfig.defaults.esp32s3
-  - idf.py set-target esp32s3
-  - idf.py build
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_ETHERNET=y\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.esp32s3
-  - echo -e "\nCONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE=y" >> sdkconfig.defaults.esp32s3
-  - idf.py set-target esp32s3
-  - idf.py build
+  - git checkout -- .
+  - git clean -xdff
+  - echo -e "\nCONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
-  - rm -rf build sdkconfig
-  - sed -i '$d' sdkconfig.defaults.esp32s3
-  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.esp32s3
-  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_USB=y\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_SPI=y" >> sdkconfig.defaults.esp32s3
-  - idf.py set-target esp32s3
-  - idf.py build
+  - git checkout -- .
+  - git clean -xdff
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_SPI=y" >> sdkconfig.defaults.${idf_target}
+  - echo -e "\nCONFIG_BRIDGE_EXTERNAL_NETIF_MODEM=y" >> sdkconfig.defaults.${idf_target}
+  - echo -e "\nCONFIG_BRIDGE_DATA_FORWARDING_NETIF_USB=y" >> sdkconfig.defaults.${idf_target}
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
 
 .build_wifi_router_examples: &build_wifi_router_examples
   - cd examples/wifi_router
   - rm -rf build sdkconfig
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
   - cd -
 
 .build_wireless_nic_examples: &build_wireless_nic_examples
   - cd examples/wireless_nic
   - rm -rf build sdkconfig
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
   - cd -
 
 .build_wired_nic_examples: &build_wired_nic_examples
   - cd examples/wired_nic
   - rm -rf build sdkconfig
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
   - cd -
 
 .build_4g_hotspot_examples: &build_4g_hotspot_examples
   - cd examples/4g_hotspot
   - rm -rf build sdkconfig
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
   - cd -
 
 .build_4g_nic_examples: &build_4g_nic_examples
   - cd examples/4g_nic
   - rm -rf build sdkconfig
-  - idf.py set-target ${idf_target}
-  - idf.py build
+  - idf.py ${compile_option} set-target ${idf_target}
+  - idf.py ${compile_option} build
   - cd -
 
 .build_iot_bridge_examples: &build_iot_bridge_examples
@@ -132,16 +141,34 @@ variables: &global-variables
   - *build_4g_hotspot_examples
   - *build_4g_nic_examples
 
-esp32_v4.3_build:
+.pre_check_template:
+  stage: pre_check
+  image: python:3.9
+  tags: ["build", "amd64", "internet"]
+  needs: []
+
+check_pre_commit:
+  extends:
+    - .pre_check_template
+  before_script:
+    - pip install pre-commit
+  script:
+    - pre-commit install --allow-missing-config -t pre-commit -t commit-msg
+    - pre-commit run -a
+
+esp32_build:
   stage: build
-  image: espressif/idf:release-v4.3
+
   tags:
     - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.0', 'espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32
-    idf_branch: release/v4.3
 
   before_script:
     - *before_script_preparation
@@ -151,73 +178,18 @@ esp32_v4.3_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_esp32
 
-esp32_v4.4_build:
+esp32c2_build:
   stage: build
-  image: espressif/idf:release-v4.4
   tags:
     - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32
-    idf_branch: release/v4.4
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32
-
-esp32_v5.0_build:
-  stage: build
-  image: espressif/idf:release-v5.0
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32
-    idf_branch: release/v5.0
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32
-
-esp32_v5.1_build:
-  stage: build
-  image: espressif/idf:release-v5.1
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32
-    idf_branch: release/v5.1
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32
-
-esp32c2_v5.0_build:
-  stage: build
-  image: espressif/idf:release-v5.0
-  tags:
-    - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.0', 'espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32c2
-    idf_branch: release/v5.0
 
   before_script:
     - *before_script_preparation
@@ -227,35 +199,18 @@ esp32c2_v5.0_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_default
 
-esp32c2_v5.1_build:
+esp32c3_build:
   stage: build
-  image: espressif/idf:release-v5.1
   tags:
     - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32c2
-    idf_branch: release/v5.1
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_default
-
-esp32c3_v4.3_build:
-  stage: build
-  image: espressif/idf:release-v4.3
-  tags:
-    - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.0', 'espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32c3
-    idf_branch: release/v4.3
 
   before_script:
     - *before_script_preparation
@@ -265,73 +220,18 @@ esp32c3_v4.3_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_default
 
-esp32c3_v4.4_build:
+esp32s2_build:
   stage: build
-  image: espressif/idf:release-v4.4
   tags:
     - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32c3
-    idf_branch: release/v4.4
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_default
-
-esp32c3_v5.0_build:
-  stage: build
-  image: espressif/idf:release-v5.0
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32c3
-    idf_branch: release/v5.0
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_default
-
-esp32c3_v5.1_build:
-  stage: build
-  image: espressif/idf:release-v5.1
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32c3
-    idf_branch: release/v5.1
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_default
-
-esp32s2_v4.4_build:
-  stage: build
-  image: espressif/idf:release-v4.4
-  tags:
-    - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.0', 'espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32s2
-    idf_branch: release/v4.4
 
   before_script:
     - *before_script_preparation
@@ -341,54 +241,18 @@ esp32s2_v4.4_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_esp32s2
 
-esp32s2_v5.0_build:
+esp32s3_build:
   stage: build
-  image: espressif/idf:release-v5.0
   tags:
     - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32s2
-    idf_branch: release/v5.0
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32s2
-
-esp32s2_v5.1_build:
-  stage: build
-  image: espressif/idf:release-v5.1
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32s2
-    idf_branch: release/v5.1
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32s2
-
-esp32s3_v4.4_build:
-  stage: build
-  image: espressif/idf:release-v4.4
-  tags:
-    - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.0', 'espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32s3
-    idf_branch: release/v4.4
 
   before_script:
     - *before_script_preparation
@@ -398,54 +262,18 @@ esp32s3_v4.4_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_esp32s3
 
-esp32s3_v5.0_build:
+esp32c6_build:
   stage: build
-  image: espressif/idf:release-v5.0
   tags:
     - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32s3
-    idf_branch: release/v5.0
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32s3
-
-esp32s3_v5.1_build:
-  stage: build
-  image: espressif/idf:release-v5.1
-  tags:
-    - build
-
-  variables:
-    <<: *global-variables
-    idf_target: esp32s3
-    idf_branch: release/v5.1
-
-  before_script:
-    - *before_script_preparation
-
-  script:
-    - *setup_esp_idf
-    - *build_iot_bridge_examples
-    - *build_iot_bridge_esp32s3
-
-esp32c6_v5.1_build:
-  stage: build
-  image: espressif/idf:release-v5.1
-  tags:
-    - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.1', 'espressif/idf:release-v5.2', 'espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
     idf_target: esp32c6
-    idf_branch: release/v5.1
 
   before_script:
     - *before_script_preparation
@@ -455,22 +283,25 @@ esp32c6_v5.1_build:
     - *build_iot_bridge_examples
     - *build_iot_bridge_default
 
-esp32h2_v5.1_build:
+esp32c5_build:
   stage: build
-  image: espressif/idf:release-v5.1
   tags:
     - build
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ['espressif/idf:release-v5.3']
 
   variables:
     <<: *global-variables
-    idf_target: esp32s3
-    idf_branch: release/v5.1
+    idf_target: esp32c5
+    compile_option: --preview
 
   before_script:
     - *before_script_preparation
 
   script:
-    - *setup_esp_idf
+    - *setup_esp_idf_master
     - *build_iot_bridge_examples
     - *build_iot_bridge_default
 
@@ -494,4 +325,4 @@ push_master_to_github:
     - echo -e "Host github.com\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
     - if [ -d "components/iot_bridge/priv_src" ]; then exit 1; fi
     - git remote add github git@github.com:espressif/esp-iot-bridge.git
-    - eval $(git for-each-ref --shell bash --format 'if [ $CI_BUILD_REF == %(objectname) ]; then git checkout -B %(refname:strip=3); git push --follow-tags github %(refname:strip=3); fi;' $GITHUB_PUSH_REFS)
+    - eval $(git for-each-ref --shell bash --format 'if [ $CI_COMMIT_SHA == %(objectname) ]; then git checkout -B %(refname:strip=3); git push --follow-tags github %(refname:strip=3); fi;' $GITHUB_PUSH_REFS)
