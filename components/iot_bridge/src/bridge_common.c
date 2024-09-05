@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -133,18 +133,44 @@ typedef struct esp_bridge_network_segment_custom_check_type {
 } esp_bridge_network_segment_custom_check_t;
 static esp_bridge_network_segment_custom_check_t *custom_check_list;
 
-bool esp_bridge_network_segment_check_register(bool (*custom_check_cb)(uint32_t ip))
+esp_err_t esp_bridge_network_segment_check_register(bool (*custom_check_cb)(uint32_t ip))
 {
     esp_bridge_network_segment_custom_check_t *list = (esp_bridge_network_segment_custom_check_t *)malloc(sizeof(esp_bridge_network_segment_custom_check_t));
 
-    if (list) {
-        memset(list, 0x0, sizeof(esp_bridge_network_segment_custom_check_t));
-        list->custom_check_cb = custom_check_cb;
-        list->next = custom_check_list;
-        custom_check_list = list;
+    if (list == NULL) {
+        return ESP_ERR_NO_MEM;
     }
 
-    return true;
+    memset(list, 0x0, sizeof(esp_bridge_network_segment_custom_check_t));
+    list->custom_check_cb = custom_check_cb;
+    list->next = custom_check_list;
+    custom_check_list = list;
+
+    return ESP_OK;
+}
+
+esp_err_t esp_bridge_network_segment_check_unregister(bool (*custom_check_cb)(uint32_t ip))
+{
+    esp_bridge_network_segment_custom_check_t *current = custom_check_list;
+    esp_bridge_network_segment_custom_check_t *previous = NULL;
+
+    while (current != NULL) {
+        if (current->custom_check_cb == custom_check_cb) {
+            if (previous == NULL) {
+                custom_check_list = current->next;
+            } else {
+                previous->next = current->next;
+            }
+
+            free(current);
+            return ESP_OK;
+        }
+
+        previous = current;
+        current = current->next;
+    }
+
+    return ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t esp_bridge_netif_request_ip(esp_netif_ip_info_t *ip_info)

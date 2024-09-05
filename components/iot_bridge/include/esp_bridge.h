@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -168,14 +168,26 @@ esp_err_t esp_bridge_update_dns_info(esp_netif_t *external_netif, esp_netif_t *d
 void esp_bridge_create_all_netif(void);
 
 /**
- * @brief  Registered users check network segment conflict interface.
+ * @brief  Register a custom network segment conflict check callback.
  *
- * @param[in]  custom_check_cb check network segment callback
+ * @param[in]  custom_check_cb Callback function to check for network segment conflict
  *
  * @return
- *     - True: Registration success
+ *     - ESP_OK: Registration successful
+ *     - ESP_ERR_NO_MEM: Failed to allocate memory
  */
-bool esp_bridge_network_segment_check_register(bool (*custom_check_cb)(uint32_t ip));
+esp_err_t esp_bridge_network_segment_check_register(bool (*custom_check_cb)(uint32_t ip));
+
+/**
+ * @brief  Unregister a custom network segment conflict check callback.
+ *
+ * @param[in]  custom_check_cb Callback function to be unregistered
+ *
+ * @return
+ *     - ESP_OK: Unregistration successful
+ *     - ESP_ERR_NOT_FOUND: Callback function not found
+ */
+esp_err_t esp_bridge_network_segment_check_unregister(bool (*custom_check_cb)(uint32_t ip));
 
 /**
  * @brief  Check whether the other data-forwarding netif IP network segment conflicts with this one.
