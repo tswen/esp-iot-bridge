@@ -1,5 +1,11 @@
 # ChangeLog
 
+## v0.11.10 - 2024.11.13
+
+### Feature
+
+- Add esp_bridge_network_segment_check_unregister API ([221b83d](https://github.com/espressif/esp-iot-bridge/commit/221b83d19419628508b76d56ae2ee3f75b8d5caf))
+
 ## v0.11.9 - 2024.8.6
 
 ### Feature
