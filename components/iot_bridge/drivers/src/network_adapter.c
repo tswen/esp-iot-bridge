@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "soc/lldesc.h"
 #include "sys/queue.h"
 #include "soc/soc.h"
