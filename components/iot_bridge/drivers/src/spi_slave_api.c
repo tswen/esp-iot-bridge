@@ -106,7 +106,6 @@ if_ops_t if_ops = {
 	.deinit = esp_spi_deinit,
 };
 
-#define SPI_MEMPOOL_NUM_BLOCKS     ((SPI_TX_QUEUE_SIZE+SPI_RX_QUEUE_SIZE)*2)
 static struct hosted_mempool * buf_mp_tx_g;
 static struct hosted_mempool * buf_mp_rx_g;
 static struct hosted_mempool * trans_mp_g;
@@ -114,11 +113,14 @@ static struct hosted_mempool * trans_mp_g;
 static inline void spi_mempool_create()
 {
 	buf_mp_tx_g = hosted_mempool_create(NULL, 0,
-			SPI_MEMPOOL_NUM_BLOCKS, SPI_BUFFER_SIZE);
-	/* re-use the mempool, as same size, can be seperate, if needed */
-	buf_mp_rx_g = buf_mp_tx_g;
+			(SPI_TX_QUEUE_SIZE + SPI_QUEUE_SIZE + 1), SPI_BUFFER_SIZE);
+
+	buf_mp_rx_g = hosted_mempool_create(NULL, 0,
+			(SPI_RX_QUEUE_SIZE + SPI_QUEUE_SIZE + SPI_QUEUE_SIZE), SPI_BUFFER_SIZE);
+
 	trans_mp_g = hosted_mempool_create(NULL, 0,
-			SPI_MEMPOOL_NUM_BLOCKS, sizeof(spi_slave_transaction_t));
+			SPI_QUEUE_SIZE, sizeof(spi_slave_transaction_t));
+
 #if CONFIG_ESP_CACHE_MALLOC
 	assert(buf_mp_tx_g);
 	assert(buf_mp_rx_g);

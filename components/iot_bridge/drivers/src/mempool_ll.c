@@ -67,7 +67,7 @@ os_mempool_poison_check(void *start, int sz)
 #endif
 
 os_error_t
-_os_mempool_init(struct os_mempool *mp, uint16_t blocks, uint32_t block_size,
+os_mempool_init(struct os_mempool *mp, uint16_t blocks, uint32_t block_size,
                 void *membuf, const char *name)
 {
 	int true_block_size;
@@ -125,12 +125,12 @@ _os_mempool_init(struct os_mempool *mp, uint16_t blocks, uint32_t block_size,
 }
 
 os_error_t
-_os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
+os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
                     uint32_t block_size, void *membuf, const char *name)
 {
 	int rc;
 
-	rc = _os_mempool_init(&mpe->mpe_mp, blocks, block_size, membuf, name);
+	rc = os_mempool_init(&mpe->mpe_mp, blocks, block_size, membuf, name);
 	if (rc != 0) {
 		return rc;
 	}
@@ -143,7 +143,7 @@ _os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
 }
 
 os_error_t
-_os_mempool_clear(struct os_mempool *mp)
+os_mempool_clear(struct os_mempool *mp)
 {
 	struct os_memblock *block_ptr;
 	int true_block_size;
@@ -182,23 +182,23 @@ _os_mempool_clear(struct os_mempool *mp)
 }
 
 os_error_t
-_os_mempool_ext_clear(struct os_mempool_ext *mpe)
+os_mempool_ext_clear(struct os_mempool_ext *mpe)
 {
 	mpe->mpe_mp.mp_flags = 0;
 	mpe->mpe_put_cb = NULL;
 	mpe->mpe_put_arg = NULL;
 
-	return _os_mempool_clear(&mpe->mpe_mp);
+	return os_mempool_clear(&mpe->mpe_mp);
 }
 
 bool
-_os_mempool_is_sane(const struct os_mempool *mp)
+os_mempool_is_sane(const struct os_mempool *mp)
 {
 	struct os_memblock *block;
 
 	/* Verify that each block in the free list belongs to the mempool. */
 	SLIST_FOREACH(block, mp, mb_next) {
-		if (!_os_memblock_from(mp, block)) {
+		if (!os_memblock_from(mp, block)) {
 			return false;
 		}
 		os_mempool_poison_check(block, OS_MEMPOOL_TRUE_BLOCK_SIZE(mp));
@@ -208,7 +208,7 @@ _os_mempool_is_sane(const struct os_mempool *mp)
 }
 
 int
-_os_memblock_from(const struct os_mempool *mp, const void *block_addr)
+os_memblock_from(const struct os_mempool *mp, const void *block_addr)
 {
 	uintptr_t true_block_size;
 	uintptr_t baddr_ptr;
@@ -235,7 +235,7 @@ _os_memblock_from(const struct os_mempool *mp, const void *block_addr)
 }
 
 void *
-_os_memblock_get(struct os_mempool *mp)
+os_memblock_get(struct os_mempool *mp)
 {
 	struct os_memblock *block;
 
@@ -268,7 +268,7 @@ _os_memblock_get(struct os_mempool *mp)
 }
 
 os_error_t
-_os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr)
+os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr)
 {
 	struct os_memblock *block;
 
@@ -291,7 +291,7 @@ _os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr)
 }
 
 os_error_t
-_os_memblock_put(struct os_mempool *mp, void *block_addr)
+os_memblock_put(struct os_mempool *mp, void *block_addr)
 {
 	struct os_mempool_ext *mpe;
 	int rc;
@@ -306,7 +306,7 @@ _os_memblock_put(struct os_mempool *mp, void *block_addr)
 
 #if MYNEWT_VAL(OS_MEMPOOL_CHECK)
 	/* Check that the block we are freeing is a valid block! */
-	assert(_os_memblock_from(mp, block_addr));
+	assert(os_memblock_from(mp, block_addr));
 
 	/*
 	 * Check for duplicate free.
@@ -328,11 +328,11 @@ _os_memblock_put(struct os_mempool *mp, void *block_addr)
 	}
 
 	/* No callback; free the block. */
-	return _os_memblock_put_from_cb(mp, block_addr);
+	return os_memblock_put_from_cb(mp, block_addr);
 }
 
 struct os_mempool *
-_os_mempool_info_get_next(struct os_mempool *mp, struct os_mempool_info *omi)
+os_mempool_info_get_next(struct os_mempool *mp, struct os_mempool_info *omi)
 {
 	struct os_mempool *cur;
 
@@ -350,8 +350,7 @@ _os_mempool_info_get_next(struct os_mempool *mp, struct os_mempool_info *omi)
 	omi->omi_num_blocks = cur->mp_num_blocks;
 	omi->omi_num_free = cur->mp_num_free;
 	omi->omi_min_free = cur->mp_min_free;
-	strncpy(omi->omi_name, cur->name, sizeof(omi->omi_name) - 1);
-	omi->omi_name[sizeof(omi->omi_name) - 1] = '\0';
+	strlcpy(omi->omi_name, cur->name, sizeof(omi->omi_name));
 
 	return (cur);
 }
