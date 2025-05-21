@@ -33,8 +33,8 @@ struct hosted_mempool * hosted_mempool_create(void *pre_allocated_mem,
 
 	if (!pre_allocated_mem) {
 		/* no pre-allocated mem, allocate new */
-		heap = (uint8_t *)CALLOC( MEMPOOL_ALIGNED(OS_MEMPOOL_BYTES(
-						num_blocks,block_size)), 1);
+		heap = (uint8_t *)MEM_ALLOC( MEMPOOL_ALIGNED(OS_MEMPOOL_BYTES(
+						num_blocks,block_size)));
 		if (!heap) {
 			ESP_LOGE(TAG, "mempool create failed, no mem\n");
 			return NULL;
@@ -53,8 +53,8 @@ struct hosted_mempool * hosted_mempool_create(void *pre_allocated_mem,
 		}
 	}
 
-	new = (struct hosted_mempool*)CALLOC(sizeof(struct hosted_mempool), 1);
-	pool = (struct os_mempool *)CALLOC(sizeof(struct os_mempool), 1);
+	new = (struct hosted_mempool*)CALLOC(1, sizeof(struct hosted_mempool));
+	pool = (struct os_mempool *)CALLOC(1, sizeof(struct os_mempool));
 
 	if(!new || !pool) {
 		goto free_buffs;
@@ -62,8 +62,8 @@ struct hosted_mempool * hosted_mempool_create(void *pre_allocated_mem,
 
 	snprintf(str, MEMPOOL_NAME_STR_SIZE, "hosted_%p", pool);
 
-	if (_os_mempool_init(pool, num_blocks, block_size, heap, str)) {
-		ESP_LOGE(TAG, "_os_mempool_init failed\n");
+	if (os_mempool_init(pool, num_blocks, block_size, heap, str)) {
+		ESP_LOGE(TAG, "os_mempool_init failed\n");
 		goto free_buffs;
 	}
 
@@ -76,7 +76,7 @@ struct hosted_mempool * hosted_mempool_create(void *pre_allocated_mem,
 	new->block_size = block_size;
 
 #if MEMPOOL_DEBUG
-	ESP_LOGI(MEM_TAG, "Create mempool %p with num_blk[%lu] blk_size:[%lu]", new->pool, new->num_blocks, new->block_size);
+	ESP_LOGI(TAG, "Create mempool %p with num_blk[%u] blk_size:[%u]", new->pool, (unsigned int)new->num_blocks, (unsigned int)new->block_size);
 #endif
 
 	return new;
@@ -97,9 +97,8 @@ void hosted_mempool_destroy(struct hosted_mempool *mempool)
 #ifdef CONFIG_ESP_CACHE_MALLOC
 	if (!mempool)
 		return;
-#if MEMPOOL_DEBUG
-	ESP_LOGI(MEM_TAG, "Destroy mempool %p num_blk[%lu] blk_size:[%lu]", mempool->pool, mempool->num_blocks, mempool->block_size);
-#endif
+
+	ESP_LOGI(TAG, "Destroy mempool %p num_blk[%u] blk_size:[%u]", mempool->pool, (unsigned int)mempool->num_blocks, (unsigned int)mempool->block_size);
 
 	FREE(mempool->pool);
 
@@ -125,12 +124,12 @@ void * hosted_mempool_alloc(struct hosted_mempool *mempool,
 
 	if(nbytes > mempool->block_size) {
 		ESP_LOGE(TAG, "Exp alloc bytes[%u] > mempool block size[%u]\n",
-				nbytes, mempool->block_size);
+				(unsigned int)nbytes, (unsigned int)mempool->block_size);
 		return NULL;
 	}
 #endif
 
-	mem = _os_memblock_get(mempool->pool);
+	mem = os_memblock_get(mempool->pool);
 #else
 	mem = MEM_ALLOC(MEMPOOL_ALIGNED(nbytes));
 #endif
@@ -153,7 +152,7 @@ int hosted_mempool_free(struct hosted_mempool *mempool, void *mem)
 	assert(mempool->pool);
 #endif
 
-	return _os_memblock_put(mempool->pool, mem);
+	return os_memblock_put(mempool->pool, mem);
 #else
 	FREE(mem);
 	return 0;

@@ -162,9 +162,9 @@ struct os_mempool_ext;
 /**
  * Block put callback function.  If configured, this callback gets executed
  * whenever a block is freed to the corresponding extended mempool.  Note: The
- * _os_memblock_put() function calls this callback instead of freeing the block
+ * os_memblock_put() function calls this callback instead of freeing the block
  * itself.  Therefore, it is the callback's responsibility to free the block
- * via a call to _os_memblock_put_from_cb().
+ * via a call to os_memblock_put_from_cb().
  *
  * @param ome                   The extended mempool that a block is being
  *                                  freed back to.
@@ -217,7 +217,7 @@ struct os_mempool_info {
  * @return The next memory pool in the list to get information about, or NULL
  *         when at the last memory pool.
  */
-struct os_mempool *_os_mempool_info_get_next(struct os_mempool *,
+struct os_mempool *os_mempool_info_get_next(struct os_mempool *,
         struct os_mempool_info *);
 
 /*
@@ -248,7 +248,7 @@ typedef uint64_t os_membuf_t;
  *
  * @return os_error_t
  */
-os_error_t _os_mempool_init(struct os_mempool *mp, uint16_t blocks,
+os_error_t os_mempool_init(struct os_mempool *mp, uint16_t blocks,
                            uint32_t block_size, void *membuf, const char *name);
 
 /**
@@ -264,7 +264,7 @@ os_error_t _os_mempool_init(struct os_mempool *mp, uint16_t blocks,
  *
  * @return os_error_t
  */
-os_error_t _os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
+os_error_t os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
                                uint32_t block_size, void *membuf, const char *name);
 
 /**
@@ -274,7 +274,7 @@ os_error_t _os_mempool_ext_init(struct os_mempool_ext *mpe, uint16_t blocks,
  *
  * @return os_error_t
  */
-os_error_t _os_mempool_clear(struct os_mempool *mp);
+os_error_t os_mempool_clear(struct os_mempool *mp);
 
 /**
  * Clears an extended memory pool.
@@ -283,7 +283,7 @@ os_error_t _os_mempool_clear(struct os_mempool *mp);
  *
  * @return os_error_t
  */
-os_error_t _os_mempool_ext_clear(struct os_mempool_ext *mpe);
+os_error_t os_mempool_ext_clear(struct os_mempool_ext *mpe);
 
 /**
  * Performs an integrity check of the specified mempool.  This function
@@ -295,7 +295,7 @@ os_error_t _os_mempool_ext_clear(struct os_mempool_ext *mpe);
  *                                  check;
  *                              false if the memory pool is corrupt.
  */
-bool _os_mempool_is_sane(const struct os_mempool *mp);
+bool os_mempool_is_sane(const struct os_mempool *mp);
 
 /**
  * Checks if a memory block was allocated from the specified mempool.
@@ -306,7 +306,7 @@ bool _os_mempool_is_sane(const struct os_mempool *mp);
  * @return                      0 if the block does not belong to the mempool;
  *                              1 if the block does belong to the mempool.
  */
-int _os_memblock_from(const struct os_mempool *mp, const void *block_addr);
+int os_memblock_from(const struct os_mempool *mp, const void *block_addr);
 
 /**
  * Get a memory block from a memory pool
@@ -315,7 +315,7 @@ int _os_memblock_from(const struct os_mempool *mp, const void *block_addr);
  *
  * @return void* Pointer to block if available; NULL otherwise
  */
-void *_os_memblock_get(struct os_mempool *mp);
+void *os_memblock_get(struct os_mempool *mp);
 
 /**
  * Puts the memory block back into the pool, ignoring the put callback, if any.
@@ -327,7 +327,7 @@ void *_os_memblock_get(struct os_mempool *mp);
  *
  * @return os_error_t
  */
-os_error_t _os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr);
+os_error_t os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr);
 
 /**
  * Puts the memory block back into the pool
@@ -337,7 +337,7 @@ os_error_t _os_memblock_put_from_cb(struct os_mempool *mp, void *block_addr);
  *
  * @return os_error_t
  */
-os_error_t _os_memblock_put(struct os_mempool *mp, void *block_addr);
+os_error_t os_memblock_put(struct os_mempool *mp, void *block_addr);
 
 #ifdef __cplusplus
 }
