@@ -119,7 +119,16 @@ static bool esp_bridge_netif_network_segment_is_used(uint32_t ip)
     };
     while (p) {
         struct netif *lwip_netif = esp_netif_get_netif_impl(p->netif);
-        if (ip4_addr_netcmp(&dest, netif_ip4_addr(lwip_netif), netif_ip4_netmask(lwip_netif))) {
+        ip4_addr_t *netif_ip = netif_ip4_addr(lwip_netif);
+        ip4_addr_t *netif_mask = netif_ip4_netmask(lwip_netif);
+
+        // Skip netifs with IP 0.0.0.0 (not configured yet)
+        if (netif_ip->addr == 0) {
+            p = p->next;
+            continue;
+        }
+
+        if (ip4_addr_netcmp(&dest, netif_ip, netif_mask)) {
             return true;
         }
         p = p->next;
