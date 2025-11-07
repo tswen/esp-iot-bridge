@@ -288,6 +288,12 @@ esp_err_t esp_bridge_netif_network_segment_conflict_update(esp_netif_t *esp_neti
                 if (lwip_netif) {
                     current_mask = netif_ip4_netmask(lwip_netif)->addr;
                 }
+
+                // If DHCPS netif mask is 0.0.0.0, use the netif_ip netmask instead
+                if (current_mask == 0 && netif_ip.netmask.addr != 0) {
+                    current_mask = netif_ip.netmask.addr;
+                }
+
                 esp_ip4_addr_t valid_netmask = { .addr = netmask.addr & current_mask };
 
                 /* The checked network segment does not conflict with the external netif */
