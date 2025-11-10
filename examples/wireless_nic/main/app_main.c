@@ -101,6 +101,21 @@ static void esp_bridge_create_button(void)
     iot_button_register_cb(g_btns[0], BUTTON_LONG_PRESS_START, button_long_press_start_cb, 0);
 }
 
+static void got_ip_event_handler(void* arg, esp_event_base_t event_base,
+                                 int32_t event_id, void* event_data)
+{
+    ESP_LOGI(TAG, "========== GOT_IP_EVENT_HANDLER START ==========");
+    ESP_LOGI(TAG, "Event: %s, ID: %ld", event_base, event_id);
+
+#if defined(CONFIG_BRIDGE_DATA_FORWARDING_NETIF_ETHERNET) || defined(CONFIG_BRIDGE_NETIF_ETHERNET_AUTO_WAN_OR_LAN)
+    ESP_LOGI(TAG, "Calling esp_bridge_create_eth_netif with data_forwarding=true, enable_dhcps=true");
+    esp_netif_t *eth_netif = esp_bridge_create_eth_netif(NULL, NULL, true, true);
+    ESP_LOGI(TAG, "esp_bridge_create_eth_netif returned: %p", eth_netif);
+#endif
+
+    ESP_LOGI(TAG, "========== GOT_IP_EVENT_HANDLER END ==========");
+}
+
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_INFO);
@@ -110,26 +125,30 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    esp_bridge_create_all_netif();
+    // esp_bridge_create_all_netif();
 
-#if defined(CONFIG_BRIDGE_DATA_FORWARDING_NETIF_SOFTAP)
+#if defined(CONFIG_BRIDGE_EXTERNAL_NETIF_STATION)
+    esp_bridge_create_station_netif(NULL, NULL, false, false);
+#if defined(CONFIG_BRIDGE_WIFI_PMF_DISABLE)
+    esp_wifi_disable_pmf_config(WIFI_IF_STA);
+#endif
+#endif
+
+// #if defined(CONFIG_BRIDGE_DATA_FORWARDING_NETIF_ETHERNET) || defined(CONFIG_BRIDGE_NETIF_ETHERNET_AUTO_WAN_OR_LAN)
+//     esp_bridge_create_eth_netif(NULL, NULL, true, true);
+// #endif
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &got_ip_event_handler, NULL, NULL));
+
+#if defined(CONFIG_BRIDGE_EXTERNAL_NETIF_STATION)
     wifi_config_t wifi_cfg = {
-        .ap = {
-            .ssid = CONFIG_BRIDGE_SOFTAP_SSID,
-            .password = CONFIG_BRIDGE_SOFTAP_PASSWORD,
+        .sta = {
+            .ssid = "688017",
+            .password = "",
         }
     };
-    esp_bridge_wifi_set_config(WIFI_IF_AP, &wifi_cfg);
-#endif
-#if defined(CONFIG_BRIDGE_EXTERNAL_NETIF_STATION)
+    esp_bridge_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
     esp_wifi_connect();
 #endif
     esp_bridge_create_button();
-
-#if defined(CONFIG_APP_BRIDGE_USE_WEB_SERVER)
-    StartWebServer();
-#endif /* CONFIG_APP_BRIDGE_USE_WEB_SERVER */
-#if defined(CONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE)
-    esp_bridge_wifi_prov_mgr();
-#endif /* CONFIG_APP_BRIDGE_USE_WIFI_PROVISIONING_OVER_BLE */
 }
