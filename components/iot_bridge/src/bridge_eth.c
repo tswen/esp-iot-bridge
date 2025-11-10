@@ -65,10 +65,62 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
         ESP_LOGI(TAG, "Ethernet Link Up");
         ESP_LOGI(TAG, "Ethernet HW Addr "MACSTR"", MAC2STR(mac_addr));
-            break;
+
+        // Enable NAPT for data forwarding netif (LAN mode)
+        // Note: The eth_action_connected() in glue layer will call esp_netif_up()
+        // but it may not have completed yet when this handler runs
+        esp_netif_t *eth_lan_netif = esp_netif_get_handle_from_ifkey("ETH_LAN");
+        if (eth_lan_netif) {
+            esp_netif_dhcp_status_t state;
+
+            // Ensure the netif is up (in case glue layer hasn't done it yet)
+            if (!esp_netif_is_netif_up(eth_lan_netif)) {
+                ESP_LOGI(TAG, "ETH_LAN netif not up yet, calling esp_netif_up");
+                esp_netif_up(eth_lan_netif);
+            }
+
+            // Restart DHCP server to ensure it's running properly
+            if (esp_netif_dhcps_get_status(eth_lan_netif, &state) == ESP_OK) {
+                if (state != ESP_NETIF_DHCP_STOPPED) {
+                    ESP_LOGI(TAG, "Stopping DHCP server before restart");
+                    esp_netif_dhcps_stop(eth_lan_netif);
+                }
+
+                esp_err_t ret = esp_netif_dhcps_start(eth_lan_netif);
+                if (ret == ESP_OK) {
+                    ESP_LOGI(TAG, "DHCP server started successfully");
+                } else {
+                    ESP_LOGE(TAG, "Failed to start DHCP server: %s", esp_err_to_name(ret));
+                }
+            }
+
+            // Enable NAPT for this interface
+            esp_netif_ip_info_t netif_ip_info = { 0 };
+            esp_netif_get_ip_info(eth_lan_netif, &netif_ip_info);
+            if (netif_ip_info.ip.addr != 0) {
+                ESP_LOGI(TAG, "Enabling NAPT for ETH_LAN with IP:" IPSTR, IP2STR(&netif_ip_info.ip));
+                ip_napt_enable(netif_ip_info.ip.addr, 1);
+            } else {
+                ESP_LOGW(TAG, "ETH_LAN has no IP address, NAPT not enabled");
+            }
+        }
+        break;
 
         case ETHERNET_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "Ethernet Link Down");
+
+            // Stop DHCP server when ethernet disconnects
+            esp_netif_t *eth_lan_netif_disc = esp_netif_get_handle_from_ifkey("ETH_LAN");
+            if (eth_lan_netif_disc) {
+                esp_netif_dhcp_status_t state;
+                if (esp_netif_dhcps_get_status(eth_lan_netif_disc, &state) == ESP_OK) {
+                    if (state != ESP_NETIF_DHCP_STOPPED) {
+                        ESP_LOGI(TAG, "Stopping DHCP server on disconnect");
+                        esp_netif_dhcps_stop(eth_lan_netif_disc);
+                    }
+                }
+            }
+
             IOT_BRIDGE_NAPT_TABLE_CLEAR();
             break;
 
@@ -451,7 +503,7 @@ esp_netif_t* esp_bridge_create_eth_netif(esp_netif_ip_info_t* ip_info, uint8_t m
             esp_bridge_netif_list_add(netif, eth_netif_dhcp_status_change_cb, eth_netif_dhcp_status_change_cb);
             esp_netif_get_ip_info(netif, &netif_ip_info);
             ESP_LOGI(TAG, "ETH IP Address:" IPSTR, IP2STR(&netif_ip_info.ip));
-            ip_napt_enable(netif_ip_info.ip.addr, 1);
+            ESP_LOGI(TAG, "NAPT will be enabled when Ethernet link is up (ETHERNET_EVENT_CONNECTED)");
         } else {
             esp_bridge_netif_list_add(netif, NULL, NULL);
         }
